@@ -1,0 +1,3 @@
+pywhatkit
+notion-client
+python-dotenv

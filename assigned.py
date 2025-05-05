@@ -1,0 +1,107 @@
+import os
+from datetime import datetime
+from dotenv import load_dotenv
+import pywhatkit as kit
+from notion_client import Client
+
+# Load environment variables
+load_dotenv()
+
+# Initialize Notion client
+notion = Client(auth=os.getenv("NOTION_TOKEN"))
+
+def format_notion_date(date_obj):
+    """Formats Notion date object into human-readable string."""
+    if not date_obj:
+        return "No Date"
+    
+    start_str = date_obj.get("start")
+    end_str = date_obj.get("end")
+    
+    if not start_str:
+        return "No Date"
+    
+    try:
+        start_date = datetime.fromisoformat(start_str)
+        start_formatted = start_date.strftime("%b %d, %Y")
+        
+        if end_str and end_str != start_str:  # It's a date range
+            end_date = datetime.fromisoformat(end_str)
+            # Same month/year: "May 10 - 12, 2024"
+            if start_date.month == end_date.month and start_date.year == end_date.year:
+                return f"{start_date.strftime('%b %d')} - {end_date.strftime('%d, %Y')}"
+            # Same year: "May 10 - Jun 12, 2024"
+            elif start_date.year == end_date.year:
+                return f"{start_date.strftime('%b %d')} - {end_date.strftime('%b %d, %Y')}"
+            # Different years: "Dec 30, 2023 - Jan 2, 2024"
+            else:
+                return f"{start_formatted} - {end_date.strftime('%b %d, %Y')}"
+        return start_formatted  # Single date
+    except ValueError:
+        return "Invalid Date"
+
+def fetch_assigned_tasks():
+    """Fetch tasks where 'Assign' is not empty, grouped by assignee."""
+    query = {
+        "filter": {
+            "and": [
+                {
+                    "property": "Assign",
+                    "people": {"is_not_empty": True}
+                },
+                {
+                    "property": "Status",
+                    "status": {"equals": "In progress"}
+                }
+            ]
+        }
+    }
+    results = notion.databases.query(database_id=os.getenv("DATABASE_ID"), **query).get("results", [])
+    
+    tasks_by_assignee = {}
+    
+    for page in results:
+        props = page.get("properties", {})
+        
+        # Extract assignee name (first person if multiple)
+        assignees = props.get("Assign", {}).get("people", [])
+        if not assignees:
+            continue
+        assignee_name = assignees[0].get("name", "Unassigned")
+        
+        # Extract task details
+        task = props.get("Task", {}).get("title", [{}])[0].get("text", {}).get("content", "No Task")
+        epica = props.get("Epica", {}).get("status", {}).get("name", "No Epica")
+        date_str = format_notion_date(props.get("Start Date", {}).get("date"))
+        
+        # Group by assignee
+        if assignee_name not in tasks_by_assignee:
+            tasks_by_assignee[assignee_name] = []
+        tasks_by_assignee[assignee_name].append((task, epica, date_str))
+    
+    return tasks_by_assignee
+
+def send_whatsapp_messages(tasks_by_assignee):
+    """Send formatted messages to individual WhatsApp number."""
+    phone_number = os.getenv("WHATSAPP_NUMBER")
+    
+    for assignee, tasks in tasks_by_assignee.items():
+        header = f"`{assignee}` | *{len(tasks)}* cards in play\n\n"
+        headers_line = "*Task* | *Épica* | *Start Date*\n\n"
+        task_lines = [
+            f"{i+1}. {task} *|*  {epica} *|* {date}"
+            for i, (task, epica, date) in enumerate(tasks)
+        ]
+        message = header + headers_line + "\n\n".join(task_lines)
+        
+        kit.sendwhatmsg_instantly(
+            phone_no=phone_number,
+            message=message,
+            wait_time=11,
+            tab_close=True
+        )
+        print(f"Sent tasks for {assignee}")
+
+if __name__ == "__main__":
+    tasks_by_assignee = fetch_assigned_tasks()
+    send_whatsapp_messages(tasks_by_assignee)
