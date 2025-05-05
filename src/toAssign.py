@@ -75,7 +75,7 @@ def send_whatsapp_messages(tasks_by_epic):
             f"{i+1}. {task}"
             for i, (task, _) in enumerate(tasks)
         ]
-        message = header + "\n".join(task_lines)
+        message = header + "\n\n".join(task_lines)
         
         try:
             kit.sendwhatmsg_instantly(
