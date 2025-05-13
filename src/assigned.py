@@ -86,7 +86,7 @@ def send_whatsapp_messages(tasks_by_assignee):
     phone_number = os.getenv("WHATSAPP_NUMBER")
     
     for assignee, tasks in tasks_by_assignee.items():
-        header = f"`{assignee}` | _{len(tasks)}_ cards in play\n\n"
+        header = f"`{assignee}` | *{len(tasks)}* cards in play\n\n"
         headers_line = "_Task_ | _Épica_ | _Start Date_\n\n"
         task_lines = [
             f"{i+1}. {task} *|*  {epica} *|* {date}"
