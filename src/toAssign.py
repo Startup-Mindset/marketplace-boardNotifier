@@ -42,7 +42,7 @@ def fetch_unassigned_tasks():
     query = {
     "filter": {
         "property": "Status",
-        "status": {"equals": "Not started"}
+        "status": {"equals": "Backlog"}
         }
     }
     results = notion.databases.query(database_id=os.getenv("DATABASE_ID"), **query).get("results", [])
