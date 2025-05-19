@@ -99,7 +99,7 @@ def send_whatsapp_messages(tasks_by_assignee):
             header = f"`Tasks played by {assignee}`\n\n"
             headers_line = "_Task_ | _Status_ | _Start Date_\n\n"
             task_lines = [
-                f"{i+1}. {task} *|* {status} *|* {date}"
+                f"{i+1}. {task} *|* {status} *|* {date}\n"
                 for i, (task, status, date) in enumerate(tasks)
             ]
             message = header + headers_line + "\n".join(task_lines)
