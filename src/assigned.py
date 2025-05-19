@@ -41,21 +41,24 @@ def format_notion_date(date_obj):
         return "Invalid Date"
 
 def fetch_assigned_tasks():
-    """Fetch tasks where 'Assign' is not empty, grouped by assignee."""
+    """Fetch tasks where 'Assign' is not empty and status is 'In progress' or 'Assigned'."""
     query = {
         "filter": {
             "and": [
                 {
                     "property": "Assign",
-                    "people": {"is_not_empty": True}
+                    "people": {"is_not_empty": True}  # Changed to is_not_empty
                 },
                 {
-                    "property": "Status",
-                    "status": {"equals": "In progress"}
+                    "or": [
+                        {"property": "Status", "status": {"equals": "In progress"}},
+                        {"property": "Status", "status": {"equals": "Assigned"}}
+                    ]
                 }
             ]
         }
     }
+    
     results = notion.databases.query(database_id=os.getenv("DATABASE_ID"), **query).get("results", [])
     
     tasks_by_assignee = {}
@@ -65,43 +68,53 @@ def fetch_assigned_tasks():
         
         # Extract assignee name (first person if multiple)
         assignees = props.get("Assign", {}).get("people", [])
-        if not assignees:
+        if not assignees:  # This shouldn't happen due to our filter, but just in case
             continue
         assignee_name = assignees[0].get("name", "Unassigned")
         
         # Extract task details
         task = props.get("Task", {}).get("title", [{}])[0].get("text", {}).get("content", "No Task")
-        epica = props.get("Epica", {}).get("status", {}).get("name", "No Epica")
+        status = props.get("Status", {}).get("status", {}).get("name", "No Status")
         date_str = format_notion_date(props.get("Start Date", {}).get("date"))
         
         # Group by assignee
         if assignee_name not in tasks_by_assignee:
             tasks_by_assignee[assignee_name] = []
-        tasks_by_assignee[assignee_name].append((task, epica, date_str))
+        tasks_by_assignee[assignee_name].append((task, status, date_str))
     
     return tasks_by_assignee
 
 def send_whatsapp_messages(tasks_by_assignee):
-    """Send formatted messages to individual WhatsApp number."""
-    phone_number = os.getenv("WHATSAPP_NUMBER")
+    """Send formatted messages to the configured WhatsApp number."""
+    if not tasks_by_assignee:
+        print("No assigned tasks found.")
+        return
     
-    for assignee, tasks in tasks_by_assignee.items():
-        header = f"`{assignee}` | *{len(tasks)}* cards in play\n\n"
-        headers_line = "_Task_ | _Épica_ | _Start Date_\n\n"
-        task_lines = [
-            f"{i+1}. {task} *|*  {epica} *|* {date}"
-            for i, (task, epica, date) in enumerate(tasks)
-        ]
-        message = header + headers_line + "\n\n".join(task_lines)
+    try:
+        phone_number = os.getenv("WHATSAPP_NUMBER")
+        if not phone_number:
+            raise ValueError("WHATSAPP_NUMBER not configured in environment variables")
         
-        kit.sendwhatmsg_instantly(
-            phone_no=phone_number,
-            message=message,
-            wait_time=11,
-            tab_close=True
-        )
-        print(f"Sent tasks for {assignee}")
+        for assignee, tasks in tasks_by_assignee.items():
+            header = f"`Tasks played by {assignee}`\n\n"
+            headers_line = "_Task_ | _Status_ | _Start Date_\n\n"
+            task_lines = [
+                f"{i+1}. {task} *|* {status} *|* {date}"
+                for i, (task, status, date) in enumerate(tasks)
+            ]
+            message = header + headers_line + "\n".join(task_lines)
+            
+            kit.sendwhatmsg_instantly(
+                phone_no=phone_number,
+                message=message,
+                wait_time=11,
+                tab_close=True
+            )
+            print(f"Sent {len(tasks)} tasks for {assignee}")
+            
+    except Exception as e:
+        print(f"Failed to send WhatsApp message: {str(e)}")
 
 if __name__ == "__main__":
-    tasks_by_assignee = fetch_assigned_tasks()
-    send_whatsapp_messages(tasks_by_assignee)
+    assigned_tasks = fetch_assigned_tasks()
+    send_whatsapp_messages(assigned_tasks)
